@@ -3,149 +3,141 @@ import pandas as pd
 import math
 from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
+# Branding
+AUTHOR_NAME = "Jaideep"
+DASHBOARD_TITLE = f"GDP Dashboard by {AUTHOR_NAME}"
+
+# Set the page title and favicon
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title=DASHBOARD_TITLE,
+    page_icon="🌍",
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# ----------------------------------------------------------------------------- 
+# Load GDP Data
 
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
-
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
+def load_gdp_data():
+    """Loads GDP data from a CSV file and processes it for analysis."""
+    
+    # Path to dataset
+    DATA_FILENAME = Path(__file__).parent / 'data/gdp_data.csv'
+    
+    # Read the CSV file
     raw_gdp_df = pd.read_csv(DATA_FILENAME)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    # Define year range
+    MIN_YEAR, MAX_YEAR = 1960, 2022
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
+    # Reshape data: Pivot year columns into 'Year' and 'GDP'
     gdp_df = raw_gdp_df.melt(
         ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
+        [str(year) for year in range(MIN_YEAR, MAX_YEAR + 1)],
         'Year',
         'GDP',
     )
 
-    # Convert years from string to integers
+    # Convert 'Year' to integer for better filtering
     gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
 
     return gdp_df
 
-gdp_df = get_gdp_data()
+# Load the GDP data
+gdp_df = load_gdp_data()
 
 # -----------------------------------------------------------------------------
-# Draw the actual page
+# Dashboard Header
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+st.title(DASHBOARD_TITLE)
+st.markdown("""
+Explore global GDP trends using data from the [World Bank Open Data](https://data.worldbank.org/).  
+This dashboard provides insights into GDP growth across different countries from 1960 to 2022.  
+Built with Streamlit by **Jaideep**.
+""")
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+# -----------------------------------------------------------------------------
+# User Input: Year Range & Country Selection
 
-# Add some spacing
-''
-''
+# Define year range
+min_year, max_year = gdp_df['Year'].min(), gdp_df['Year'].max()
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
+# Year range selection
 from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+    "Select the Year Range",
+    min_value=min_year,
+    max_value=max_year,
+    value=[min_year, max_year]
 )
 
-''
-''
+# Country selection
+countries = gdp_df['Country Code'].unique()
+selected_countries = st.multiselect(
+    "Select Countries",
+    options=countries,
+    default=['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN']
+)
 
+# Warning if no country is selected
+if not selected_countries:
+    st.warning("Please select at least one country.")
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+# -----------------------------------------------------------------------------
+# Filtered Data
 
-st.header(f'GDP in {to_year}', divider='gray')
+filtered_gdp_df = gdp_df[
+    (gdp_df['Country Code'].isin(selected_countries)) &
+    (gdp_df['Year'] >= from_year) &
+    (gdp_df['Year'] <= to_year)
+]
 
-''
+# -----------------------------------------------------------------------------
+# GDP Over Time - Line Chart
 
+st.header("GDP Trends Over Time")
+st.line_chart(
+    filtered_gdp_df,
+    x="Year",
+    y="GDP",
+    color="Country Code",
+)
+
+# -----------------------------------------------------------------------------
+# GDP Comparison in Selected Years
+
+st.header(f"GDP Comparison: {from_year} vs {to_year}")
+
+# Fetch data for selected years
+first_year_data = gdp_df[gdp_df['Year'] == from_year]
+last_year_data = gdp_df[gdp_df['Year'] == to_year]
+
+# Display GDP metrics for selected countries
 cols = st.columns(4)
 
 for i, country in enumerate(selected_countries):
     col = cols[i % len(cols)]
 
     with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+        first_gdp = first_year_data[first_year_data['Country Code'] == country]['GDP'].iat[0] / 1e9
+        last_gdp = last_year_data[last_year_data['Country Code'] == country]['GDP'].iat[0] / 1e9
 
+        # Calculate GDP growth
         if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+            growth = "N/A"
+            delta_color = "off"
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            growth = f"{last_gdp / first_gdp:.2f}x"
+            delta_color = "normal"
 
+        # Display metric
         st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
+            label=f"{country} GDP",
+            value=f"{last_gdp:,.0f}B USD",
             delta=growth,
             delta_color=delta_color
         )
+
+# -----------------------------------------------------------------------------
+# Footer
+
+st.markdown("---")
+st.markdown(f"**Developed by {AUTHOR_NAME}** | Powered by Streamlit")
